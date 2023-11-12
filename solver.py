@@ -19,16 +19,12 @@ import requests
 import torch
 from joblib import Memory
 from more_itertools import windowed
-from selenium import webdriver
-from selenium.webdriver.common.action_chains import ActionChains
-from selenium.webdriver.common.by import By
 from sklearn.feature_extraction.text import CountVectorizer
 from tqdm import tqdm
 from transformers import (
     AutoTokenizer,
     GPT2LMHeadModel,
 )
-from webdriver_manager.firefox import GeckoDriverManager
 
 device = "cpu"
 # model_id = "gpt2"
@@ -168,35 +164,16 @@ def get_solved_text(
     return sorted(best_scores, key=lambda x: x[1])
 
 
-def get_puzzle_text(puzzle_num: int) -> str:
-    """This function extracts the puzzle text from the Subsolver website.
-
-    It's not a simple HTTP GET complicated because the puzzle text is rendered via
-    Javascript and requires a keypress to reveal the text.
-    """
-    firefox_options = webdriver.FirefoxOptions()
-    driver = webdriver.Firefox(
-        executable_path=GeckoDriverManager().install(), options=firefox_options
-    )
-    puzzle_num = 1
-    driver.get(f"https://www.subsolver.com/classic/{puzzle_num}")
-
-    ActionChains(driver).key_down("f").key_down("j").perform()
-    ActionChains(driver).key_up("f").key_up("j").perform()
-
-    s = "".join(
-        e.text if e.text != "" else " "
-        for e in driver.find_elements(By.CLASS_NAME, "puzzle-letter")
-    )
-
-    driver.close()
-
+def get_puzzle_text(i: int):
+    if i == 0:
+        s = """
+        the bekenarh aitenert onslrec ot the meetaiw pf uewnorrer toue dsnnspsnotec or at gor pf the rtotlette ar edhsec ai the rlprexleit dsnnerysiceide sb thsre ghs otteicec outhslwh rdoit meitasi sddlnr ai the bsnmou ylpuadotasir sb the rsdaetf doltasi ar the banrt done sb thsre oddlrtsmec ts bode sddorasiou dhonuotoinf oic amysrtlne uewnorre bsn rsme tame ueit the amowe ts ynsberrsn gepp plt ot the uottenr ceoth at gor netlniec ts ham oic nemoair ai har ysrrerrasi ghene a kaegec at ist usiw ows at ar tnluf o tennapue thaiw oic limartovopuf ovai ts the cneom rdluytlne sb fsliw gaudsq
+        """.strip()
+    else:
+        raise NotImplementedError
     return s
 
 
-s = """
-fe ode usocceivriv tse mpra leboila frts tse leegeat deageut mnd obedruoi lebnudouw oil o cnye nm nhd unhitdw fe pecreye rt fnhcl pe ri tse peat ritedeat nm eyedwnie tn ateg pouk oil uniarled tse rbgcruotrnia fsrce fe pecreye tse mpra riteitrnia ode vnnl rt fnhcl pe fdniv mnd tse vnyedibeit tn mndue ha tn phrcl o pouklnnd ritn nhd gdnlhuta oil hctrbotecw fe meod tsot tsra leboil fnhcl hiledbrie tse yedw mdeelnba oil crpedtw nhd vnyedibeit ra beoit tn gdnteut
-""".strip()
-print(s)
-print(get_solved_text(s, 5, 2500, score_func=markov_score))
-# print(get_solved_text(s, 1, 600, score_func=perplexity_score))
+print(get_puzzle_text(0))
+# print(get_solved_text(get_puzzle_text(0), 5, 2500, score_func=markov_score))
+# print(get_solved_text(get_puzzle_text(0), 1, 600, score_func=perplexity_score))
