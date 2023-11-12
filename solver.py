@@ -6,12 +6,10 @@ Many ideas taken from Quipster (2003):
 Also playing around with neural network language models.
 """
 
-import re
+import string
 from functools import cache
 from itertools import product
-from pathlib import Path
 from random import choice
-from string import ascii_lowercase
 from typing import Callable, Tuple
 
 import numpy as np
@@ -34,43 +32,35 @@ tokenizer = AutoTokenizer.from_pretrained("sshleifer/tiny-gpt2")
 model = GPT2LMHeadModel.from_pretrained("sshleifer/tiny-gpt2")
 
 
-WHITELIST = ascii_lowercase + ascii_lowercase.upper() + " ?!,."
+WHITELIST = string.ascii_letters
 disk_cache = Memory(".subsolver")
 
 
 @disk_cache.cache
 def get_english_ngrams() -> str:
-    nietzsche = requests.get(
-        "https://s3.amazonaws.com/text-datasets/nietzsche.txt"
-    ).text
-    gatsby = requests.get("https://www.gutenberg.org/cache/epub/64317/pg64317.txt").text
+    urls = [
+        # Nietzsche
+        "https://s3.amazonaws.com/text-datasets/nietzsche.txt",
+        # The Great Gatsby
+        "https://www.gutenberg.org/cache/epub/64317/pg64317.txt",
+    ]
+    s = []
+    for url in urls:
+        if (r := requests.get(url)).status_code == 200:
+            s.append(r.text)
+    s = " ".join(s)
 
-    # Harry Potter books: https://www.kaggle.com/datasets/balabaskar/harry-potter-books-corpora-part-1-7
-    # Replace whitespace and page markers
-    pagemarker_regex = r"Page \| \d+ Harry Potter [\w\s]+? - J.K. Rowling"
-    whitespace_regex = r"\s+"
-    potter = " ".join(open(fname).read() for fname in Path("hpbooks").glob("*.txt"))
-    potter = re.sub(pagemarker_regex + "|" + whitespace_regex, " ", potter)
-
-    books = [nietzsche, gatsby, potter]
-    s = " ".join(books)
-
-    def custom_preprocess(s: str) -> str:
-        return "".join(x.lower() for x in s if x in WHITELIST)
-
-    cv = CountVectorizer(
-        analyzer="char", ngram_range=(1, 3), preprocessor=custom_preprocess
-    )
+    cv = CountVectorizer(analyzer="char", ngram_range=(1, 3), strip_accents="unicode")
     X = cv.fit_transform([s])
 
     return dict(zip(cv.get_feature_names_out(), X.toarray().flatten()))
 
 
-CORPUS_FREQS = get_english_ngrams()
+ENGLISH_NGRAMS = get_english_ngrams()
 
 
 def simple_score(s: str) -> float:
-    return sum(CORPUS_FREQS.get(c, 0) for c in s)
+    return sum(ENGLISH_NGRAMS.get(c, 0) for c in s)
 
 
 def markov_score(s: str) -> float:
@@ -85,16 +75,16 @@ def markov_score(s: str) -> float:
 @cache
 def get_likelihood(s: str) -> int:
     if "*" not in s:
-        numerator_count = CORPUS_FREQS.get(s, 0)
+        numerator_count = ENGLISH_NGRAMS.get(s, 0)
         denominator_count = sum(
-            CORPUS_FREQS.get(s[:2] + suffix, 0) for suffix in WHITELIST
+            ENGLISH_NGRAMS.get(s[:2] + suffix, 0) for suffix in WHITELIST
         )
     else:
         numerator_count = sum(
-            CORPUS_FREQS.get(prefix + s[1:2], 0) for prefix in WHITELIST
+            ENGLISH_NGRAMS.get(prefix + s[1:2], 0) for prefix in WHITELIST
         )
         denominator_count = sum(
-            CORPUS_FREQS.get(prefix + " " + suffix, 0)
+            ENGLISH_NGRAMS.get(prefix + " " + suffix, 0)
             for prefix, suffix in product(WHITELIST, WHITELIST)
         )
 
@@ -175,5 +165,5 @@ def get_puzzle_text(i: int):
 
 
 print(get_puzzle_text(0))
-# print(get_solved_text(get_puzzle_text(0), 5, 2500, score_func=markov_score))
+print(get_solved_text(get_puzzle_text(0), 5, 2500, score_func=markov_score))
 # print(get_solved_text(get_puzzle_text(0), 1, 600, score_func=perplexity_score))
