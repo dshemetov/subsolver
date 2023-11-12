@@ -1,11 +1,11 @@
-[tool.black]
-line-length = 180
-target-version = ['py310']
-include = '\.py'
-
 [tool.pytest.ini_options]
 minversion = "6.0"
 addopts = "--doctest-modules --doctest-continue-on-failure"
+doctest_optionflags = "NORMALIZE_WHITESPACE"
 
-[tool.pylint.'FORMAT']
-max-line-length=180
+[tool.ruff]
+ignore = ["E501"]
+select = ["E", "F", "I", "W"]
+fixable = ["E", "F", "I"]
+exclude = [".env", ".venv", "venv", "notebooks"]
+show-source = true
