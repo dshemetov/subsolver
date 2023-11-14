@@ -13,17 +13,21 @@ def get_puzzle_text(puzzle_num: int, remote: bool = True) -> str:
 
     Caches them to disk to be nice to the server.
 
-    It's not a simple HTTP GET complicated because the puzzle text is rendered
-    via Javascript and requires a keypress to reveal the text. If you're working
-    remotely, requires you to install Firefox and a local Selenium server (which
-    in turn requires Java):
+    It's not a simple HTTP GET because the puzzle text is rendered with
+    Javascript and requires a keypress to reveal the text. We got around this
+    with Selenium. This code uses Firefox, though you can probably modify it to
+    whatever browser you have. If you're working remotely (via SSH), you will
+    need to:
 
-        1. Ubuntu Java: sudo apt install default-jre
-        2. Download Selenium server: https://www.selenium.dev/downloads/
-        3. Probably need to install Firefox
-        4. Start Selenium server: java -jar selenium-server-4.15.0.jar
-           standalone
+        1. Install Java:
+            sudo apt install default-jre
+        2. Download Selenium server:
+            wget https://github.com/SeleniumHQ/selenium/releases/download/selenium-4.15.0/selenium-server-4.15.0.jar
+        3. Start Selenium server:
+            java -jar selenium-server-4.15.0.jar standalone
+        4. Use remote = True in this function
 
+    Set remote to False if you're not working remotely.
     """
     # Install the Gecko driver, if needed
     GeckoDriverManager().install()

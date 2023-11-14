@@ -1,9 +1,13 @@
 """A Subtitution Cypher Solver.
 
-Many ideas taken from Quipster (2003):
-  https://people.csail.mit.edu/hasinoff/pubs/hasinoff-quipster-2003.pdf
+Playing around with neural network language models. Many ideas taken from
+Quipster (2003):
 
-Also playing around with neural network language models.
+    https://people.csail.mit.edu/hasinoff/pubs/hasinoff-quipster-2003.pdf
+
+A collab version of this is at:
+
+    https://colab.research.google.com/drive/1uDn1KVQkpxw4LLQ2UfzLDLBmXu2Ui4eh#scrollTo=xmHLz6760sm7
 """
 
 import string
@@ -20,24 +24,23 @@ from more_itertools import windowed
 from sklearn.feature_extraction.text import CountVectorizer
 from tqdm import tqdm
 from transformers import (
-    AutoTokenizer,
     GPT2LMHeadModel,
+    GPT2TokenizerFast,
 )
 
 device = "cpu"
 # model_id = "gpt2"
-# model = GPT2LMHeadModel.from_pretrained(model_id).to(device)
-# tokenizer = GPT2TokenizerFast.from_pretrained(model_id)
-tokenizer = AutoTokenizer.from_pretrained("sshleifer/tiny-gpt2")
-model = GPT2LMHeadModel.from_pretrained("sshleifer/tiny-gpt2")
+model_id = "sshleifer/tiny-gpt2"
+model = GPT2LMHeadModel.from_pretrained(model_id).to(device)
+tokenizer = GPT2TokenizerFast.from_pretrained(model_id)
 
-
-WHITELIST = string.ascii_letters
+WHITELIST = string.ascii_letters + "'"
 disk_cache = Memory(".subsolver")
 
 
 @disk_cache.cache
 def get_english_ngrams() -> str:
+    """Get a dictionary of English 1,2,3-grams."""
     urls = [
         # Nietzsche
         "https://s3.amazonaws.com/text-datasets/nietzsche.txt",
@@ -59,29 +62,31 @@ def get_english_ngrams() -> str:
 ENGLISH_NGRAMS = get_english_ngrams()
 
 
-def simple_score(s: str) -> float:
-    return sum(ENGLISH_NGRAMS.get(c, 0) for c in s)
-
-
 def markov_score(s: str) -> float:
+    """Get the negative log likelihood of a string using a Markov model.
+
+    Split into words and then use a 3-gram model on each word.
+    """
     likelihood = 0
     for word in s.split(" "):
         for sw in windowed("* " + word + " ", 3):
-            likelihood += get_likelihood("".join(sw))
+            likelihood += get_neg_log_likelihood("".join(sw))
 
     return likelihood
 
 
 @cache
-def get_likelihood(s: str) -> int:
+def get_neg_log_likelihood(s: str) -> int:
+    """Get negative log likelihood of a 3-character string.
+
+    Uses a simple 2,3-gram model based on English text.
+    """
     if "*" not in s:
         numerator_count = ENGLISH_NGRAMS.get(s, 0)
-        denominator_count = sum(
-            ENGLISH_NGRAMS.get(s[:2] + suffix, 0) for suffix in WHITELIST
-        )
+        denominator_count = ENGLISH_NGRAMS.get(s[:2], 0)
     else:
         numerator_count = sum(
-            ENGLISH_NGRAMS.get(prefix + s[1:2], 0) for prefix in WHITELIST
+            ENGLISH_NGRAMS.get(prefix + s[1:], 0) for prefix in WHITELIST
         )
         denominator_count = sum(
             ENGLISH_NGRAMS.get(prefix + " " + suffix, 0)
@@ -89,12 +94,13 @@ def get_likelihood(s: str) -> int:
         )
 
     if numerator_count == 0 or denominator_count == 0:
-        return -15
+        return 15
     else:
-        return np.log(numerator_count / denominator_count)
+        return -np.log(numerator_count / denominator_count)
 
 
-def perplexity_score(s: str, tile: bool = False) -> float:
+def perplexity_score(s: str) -> float:
+    """Get the perplexity of a string using a neural network language model."""
     encodings = tokenizer(s, return_tensors="pt")
 
     max_length = model.config.n_positions
@@ -107,8 +113,6 @@ def perplexity_score(s: str, tile: bool = False) -> float:
         end_loc = min(begin_loc + max_length, seq_len)
         trg_len = end_loc - prev_end_loc  # may be different from stride on last loop
         input_ids = encodings.input_ids[:, begin_loc:end_loc].to(device)
-        if tile:
-            input_ids = torch.tile(input_ids, (2**4, 1))
         target_ids = input_ids.clone()
         target_ids[:, :-trg_len] = -100
 
@@ -126,7 +130,30 @@ def perplexity_score(s: str, tile: bool = False) -> float:
         if end_loc == seq_len:
             break
 
-    return -torch.exp(torch.stack(nlls).mean())
+    return torch.stack(nlls).mean()
+
+
+def perplexity_score2(s: str) -> float:
+    """Much simpler version of perplexity_score."""
+    tokens_tensor = tokenizer.encode(s, return_tensors="pt").to(device)
+    loss = model(tokens_tensor, labels=tokens_tensor).loss
+    return loss.cpu().detach().numpy()
+
+
+def perplexity_score3(s: str) -> float:
+    """Another attempt to get perplexity.
+
+    Random idea from this repo:
+      https://github.com/samer-noureddine/GPT-2-for-Psycholinguistic-Applications/blob/master/get_probabilities.py
+
+    Something about separating the sentence by words to help with the tokenizer.
+    """
+    encoding = []
+    for x in s.split(" "):
+        encoding.extend(tokenizer.encode(x))
+
+    tokens_tensor = torch.tensor([encoding]).to(device)
+    return model(tokens_tensor, labels=tokens_tensor).loss.cpu().detach().numpy()
 
 
 def get_solved_text(
@@ -135,6 +162,11 @@ def get_solved_text(
     n_steps: int = 2000,
     score_func: Callable[[str], float] = markov_score,
 ) -> Tuple[str, float]:
+    """Get the best solved text.
+
+    Makes random swaps and keeps the ones that reduce the negative log
+    likelihood.
+    """
     chars = list(set(s) - {" "})
     best_scores = []
     for _ in range(n_trials):
@@ -146,7 +178,7 @@ def get_solved_text(
                 y = choice(chars)
             new_s = old_s.translate({ord(x): y, ord(y): x})
             new_score = score_func(new_s)
-            if new_score >= old_score:
+            if new_score < old_score:
                 old_s, old_score = new_s, new_score
         if new_s != s:
             best_scores += [(new_s, new_score)]
@@ -165,5 +197,4 @@ def get_puzzle_text(i: int):
 
 
 print(get_puzzle_text(0))
-print(get_solved_text(get_puzzle_text(0), 5, 2500, score_func=markov_score))
-# print(get_solved_text(get_puzzle_text(0), 1, 600, score_func=perplexity_score))
+print(get_solved_text(get_puzzle_text(0)))
