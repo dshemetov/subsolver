@@ -14,23 +14,12 @@ import string
 from functools import cache
 from itertools import product
 from random import choice
-from typing import Callable, Tuple
+from typing import Callable
 
 import numpy as np
 import requests
-import torch
 from sklearn.feature_extraction.text import CountVectorizer
 from tqdm import tqdm
-from transformers import (
-    GPT2LMHeadModel,
-    GPT2TokenizerFast,
-)
-
-device = "cpu"
-# model_id = "gpt2"
-model_id = "sshleifer/tiny-gpt2"
-model = GPT2LMHeadModel.from_pretrained(model_id).to(device)
-tokenizer = GPT2TokenizerFast.from_pretrained(model_id)
 
 WHITELIST = string.ascii_letters + "'"
 
@@ -74,7 +63,7 @@ def markov_score(s: str) -> float:
 
 
 @cache
-def get_neg_log_likelihood(s: str) -> int:
+def get_neg_log_likelihood(s: str) -> float:
     """Get negative log likelihood of a 3-character string.
 
     Uses a simple 2,3-gram model based on English text.
@@ -83,52 +72,15 @@ def get_neg_log_likelihood(s: str) -> int:
         numerator_count = ENGLISH_NGRAMS.get(s, 0)
         denominator_count = ENGLISH_NGRAMS.get(s[:2], 0)
     else:
-        numerator_count = sum(
-            ENGLISH_NGRAMS.get(prefix + s[1:], 0) for prefix in WHITELIST
-        )
+        numerator_count = sum(ENGLISH_NGRAMS.get(prefix + s[1:], 0) for prefix in WHITELIST)
         denominator_count = sum(
-            ENGLISH_NGRAMS.get(prefix + " " + suffix, 0)
-            for prefix, suffix in product(WHITELIST, WHITELIST)
+            ENGLISH_NGRAMS.get(prefix + " " + suffix, 0) for prefix, suffix in product(WHITELIST, WHITELIST)
         )
 
     if numerator_count == 0 or denominator_count == 0:
-        return 15
+        return 15.0
     else:
         return -np.log(numerator_count / denominator_count)
-
-
-def perplexity_score(s: str) -> float:
-    """Get the perplexity of a string using a neural network language model."""
-    encodings = tokenizer(s, return_tensors="pt")
-
-    max_length = model.config.n_positions
-    stride = 512
-    seq_len = encodings.input_ids.size(1)
-
-    nlls = []
-    prev_end_loc = 0
-    for begin_loc in range(0, seq_len, stride):
-        end_loc = min(begin_loc + max_length, seq_len)
-        trg_len = end_loc - prev_end_loc  # may be different from stride on last loop
-        input_ids = encodings.input_ids[:, begin_loc:end_loc].to(device)
-        target_ids = input_ids.clone()
-        target_ids[:, :-trg_len] = -100
-
-        with torch.no_grad():
-            outputs = model(input_ids, labels=target_ids)
-
-            # loss is calculated using CrossEntropyLoss which averages over valid labels
-            # N.B. the model only calculates loss over trg_len - 1 labels, because it internally shifts the labels
-            # to the left by 1.
-            neg_log_likelihood = outputs.loss
-
-        nlls.append(neg_log_likelihood)
-
-        prev_end_loc = end_loc
-        if end_loc == seq_len:
-            break
-
-    return torch.stack(nlls).mean()
 
 
 def get_solved_text(
@@ -136,7 +88,7 @@ def get_solved_text(
     n_trials: int = 5,
     n_steps: int = 2000,
     score_func: Callable[[str], float] = markov_score,
-) -> Tuple[str, float]:
+) -> str:
     """Get the best solved text.
 
     Makes random swaps and keeps the ones that reduce the negative log
@@ -149,8 +101,7 @@ def get_solved_text(
         for _ in tqdm(range(n_steps)):
             x = y = None
             while x == y:
-                x = choice(chars)
-                y = choice(chars)
+                x, y = choice(chars), choice(chars)
             new_s = old_s.translate({ord(x): y, ord(y): x})
             new_score = score_func(new_s)
             if new_score < old_score:
@@ -158,7 +109,7 @@ def get_solved_text(
         if new_s != s:
             best_scores += [(new_s, new_score)]
 
-    return sorted(best_scores, key=lambda x: x[1])
+    return min(best_scores, key=lambda x: x[1])[0]
 
 
 with open("puzzles.txt") as f:

@@ -2,7 +2,5 @@ numpy
 requests
 selenium
 scikit-learn
-torch
 tqdm
-transformers
 webdriver-manager

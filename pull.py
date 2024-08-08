@@ -32,10 +32,7 @@ def get_puzzle_text(puzzle_num: int, driver: webdriver.Firefox) -> str:
     ActionChains(driver).key_down("f").key_down("j").perform()
     ActionChains(driver).key_up("f").key_up("j").perform()
 
-    s = "".join(
-        e.text if e.text != "" else " "
-        for e in driver.find_elements(By.CLASS_NAME, "puzzle-letter")
-    )
+    s = "".join(e.text if e.text != "" else " " for e in driver.find_elements(By.CLASS_NAME, "puzzle-letter"))
     return s
 
 
