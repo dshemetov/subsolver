@@ -19,8 +19,6 @@ from typing import Callable, Tuple
 import numpy as np
 import requests
 import torch
-from joblib import Memory
-from more_itertools import windowed
 from sklearn.feature_extraction.text import CountVectorizer
 from tqdm import tqdm
 from transformers import (
@@ -35,10 +33,8 @@ model = GPT2LMHeadModel.from_pretrained(model_id).to(device)
 tokenizer = GPT2TokenizerFast.from_pretrained(model_id)
 
 WHITELIST = string.ascii_letters + "'"
-disk_cache = Memory(".subsolver")
 
 
-@disk_cache.cache
 def get_english_ngrams() -> str:
     """Get a dictionary of English 1,2,3-grams."""
     urls = [
@@ -49,8 +45,9 @@ def get_english_ngrams() -> str:
     ]
     s = []
     for url in urls:
-        if (r := requests.get(url)).status_code == 200:
-            s.append(r.text)
+        r = requests.get(url, timeout=5)
+        r.raise_for_status()
+        s.append(r.text)
     s = " ".join(s)
 
     cv = CountVectorizer(analyzer="char", ngram_range=(1, 3), strip_accents="unicode")
@@ -69,8 +66,9 @@ def markov_score(s: str) -> float:
     """
     likelihood = 0
     for word in s.split(" "):
-        for sw in windowed("* " + word + " ", 3):
-            likelihood += get_neg_log_likelihood("".join(sw))
+        affixed_word = "* " + word + " "
+        for i in range(len(word) - 2):
+            likelihood += get_neg_log_likelihood(affixed_word[i : i + 3])
 
     return likelihood
 
@@ -133,29 +131,6 @@ def perplexity_score(s: str) -> float:
     return torch.stack(nlls).mean()
 
 
-def perplexity_score2(s: str) -> float:
-    """Much simpler version of perplexity_score."""
-    tokens_tensor = tokenizer.encode(s, return_tensors="pt").to(device)
-    loss = model(tokens_tensor, labels=tokens_tensor).loss
-    return loss.cpu().detach().numpy()
-
-
-def perplexity_score3(s: str) -> float:
-    """Another attempt to get perplexity.
-
-    Random idea from this repo:
-      https://github.com/samer-noureddine/GPT-2-for-Psycholinguistic-Applications/blob/master/get_probabilities.py
-
-    Something about separating the sentence by words to help with the tokenizer.
-    """
-    encoding = []
-    for x in s.split(" "):
-        encoding.extend(tokenizer.encode(x))
-
-    tokens_tensor = torch.tensor([encoding]).to(device)
-    return model(tokens_tensor, labels=tokens_tensor).loss.cpu().detach().numpy()
-
-
 def get_solved_text(
     s: str,
     n_trials: int = 5,
@@ -186,15 +161,12 @@ def get_solved_text(
     return sorted(best_scores, key=lambda x: x[1])
 
 
-def get_puzzle_text(i: int):
-    if i == 0:
-        s = """
-        the bekenarh aitenert onslrec ot the meetaiw pf uewnorrer toue dsnnspsnotec or at gor pf the rtotlette ar edhsec ai the rlprexleit dsnnerysiceide sb thsre ghs otteicec outhslwh rdoit meitasi sddlnr ai the bsnmou ylpuadotasir sb the rsdaetf doltasi ar the banrt done sb thsre oddlrtsmec ts bode sddorasiou dhonuotoinf oic amysrtlne uewnorre bsn rsme tame ueit the amowe ts ynsberrsn gepp plt ot the uottenr ceoth at gor netlniec ts ham oic nemoair ai har ysrrerrasi ghene a kaegec at ist usiw ows at ar tnluf o tennapue thaiw oic limartovopuf ovai ts the cneom rdluytlne sb fsliw gaudsq
-        """.strip()
-    else:
-        raise NotImplementedError
-    return s
+with open("puzzles.txt") as f:
+    puzzles = f.readlines()
 
 
-print(get_puzzle_text(0))
-print(get_solved_text(get_puzzle_text(0)))
+if __name__ == "__main__":
+    with open("solutions.txt", "w") as g:
+        for p in puzzles:
+            s, _ = get_solved_text(p.strip())
+            g.write(s + "\n")

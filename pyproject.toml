@@ -4,8 +4,9 @@ addopts = "--doctest-modules --doctest-continue-on-failure"
 doctest_optionflags = "NORMALIZE_WHITESPACE"
 
 [tool.ruff]
-ignore = ["E501"]
-select = ["E", "F", "I", "W"]
-fixable = ["E", "F", "I"]
-exclude = [".env", ".venv", "venv", "notebooks"]
-show-source = true
+line-length = 120
+extend-include = [
+    "I",  # isort
+    "UP", # pyupgrade
+]
+lint.fixable = ["E", "F", "I"]

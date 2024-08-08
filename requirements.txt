@@ -1,9 +1,5 @@
-datasets
-joblib
-more-itertools
 numpy
 requests
-ruff
 selenium
 scikit-learn
 torch
